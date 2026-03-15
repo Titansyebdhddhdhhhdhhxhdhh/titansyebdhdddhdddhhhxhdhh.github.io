@@ -3,15 +3,1044 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon Super Site</title>
+    <title>Mon Projet Python - Essid</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: Arial; text-align: center; padding: 50px; background: #f0f0f0; }
-        h1 { color: #0366d6; }
+        body { font-family: system-ui, sans-serif; }
+        pre { font-family: 'Courier New', monospace; background: #111; }
     </style>
 </head>
-<body>
-    <h1>🎉 Bienvenue sur mon site !</h1>
-    <p>Il est hébergé gratuitement grâce à GitHub Pages.</p>
-    <p>Modifie ce fichier comme tu veux et pousse les changements !</p>
+<body class="bg-gradient-to-br from-zinc-950 to-black text-white min-h-screen py-16">
+
+    <div class="max-w-4xl mx-auto px-6">
+        
+        <h1 class="text-6xl font-bold text-center mb-3 text-blue-400">NOM DE TON PROJET</h1>
+        <p class="text-center text-gray-400 text-2xl mb-12">Projet Python présenté à ma professeure</p>
+
+        <!-- Description -->
+        <div class="bg-zinc-900 rounded-3xl p-10 mb-12">
+            <h2 class="text-3xl font-semibold mb-6">Description du projet</h2>
+            <p class="text-lg text-gray-300 leading-relaxed">
+                Ici tu mets 2-3 phrases : ce que fait ton programme, pourquoi tu l’as fait, ce que tu as appris…
+            </p>
+        </div>
+
+        <!-- Code Python -->
+        <div class="bg-zinc-900 rounded-3xl p-10 mb-12">
+            <h2 class="text-3xl font-semibold mb-6">Code source Python</h2>
+            <pre class="p-8 rounded-2xl text-sm overflow-auto text-green-400"><code># Colle ici TOUT ton code Python
+import streamlit as st
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import datetime
+import os
+import tempfile
+
+from scipy.stats import norm, skew, kurtosis, chi2
+from io import BytesIO
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+# ── ReportLab ────────────────────────────────────────────────────────────────
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer,
+    Table, TableStyle, Image, PageBreak
+)
+
+# ── openpyxl ─────────────────────────────────────────────────────────────────
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+try:
+    from arch import arch_model
+    ARCH_OK = True
+except ImportError:
+    ARCH_OK = False
+
+# =============================================================================
+# CONFIG
+# =============================================================================
+st.set_page_config(page_title="VaR 99% CAC40 - Essid Sarra", layout="wide")
+st.title("REPORTING VaR 99% - Portefeuille CAC 40")
+st.caption("Projet Progiciel · Cours Gestion des Risques · Essid Sarra")
+
+with st.expander("Consignes du projet (Prof)", expanded=False):
+    st.markdown("""
+**Dans le cadre de mon cours vous devrez realiser le projet suivant par groupes de 4 a 5 personnes.**
+
+La composition des groupes doit etre communiquee par mail **avant le 11 janvier 2026**.
+
+**Projet : Realisation d'un progiciel en groupe a rendre pour le 14 fevrier 2026 avant 9h.**
+
+Les soutenances auront lieu le **14 fevrier 2026 de 10h a 14h** (30 minutes par groupe).
+
+**Taches :**
+1. Presenter les performances de votre portefeuille et vos choix strategiques
+2. Creer un progiciel permettant de selectionner des actifs financiers pour creer un portefeuille
+3. Estimer la VaR par les **7 methodes** : historique, parametrique, Cornish-Fisher, RiskMetrics, GARCH, TVE, TVE-GARCH
+4. Presenter et realiser les **tests de Backtesting** pour chaque methode
+5. Creer une **feuille Excel de Reporting** avec tableaux et graphiques
+6. Creer un **fichier PDF** susceptible d'etre envoye au Directeur du departement Risque
+7. Rediger un **manuel d'utilisation** du progiciel
+""")
+
+CAC40_TICKERS = [
+    'AI.PA','AIR.PA','AC.PA','MT.AS','CS.PA','BNP.PA','EN.PA','BVI.PA',
+    'CAP.PA','CA.PA','ACA.PA','BN.PA','DSY.PA','ENGI.PA','EL.PA','ERF.PA',
+    'RMS.PA','KER.PA','OR.PA','LR.PA','MC.PA','ML.PA','ORA.PA','RI.PA',
+    'PUB.PA','RNO.PA','SAF.PA','SGO.PA','SAN.PA','SU.PA','TEP.PA','HO.PA',
+    'TTE.PA','URW.PA','VIE.PA','DG.PA','WLN.PA','ALO.PA','GLE.PA','AXA.PA'
+]
+
+# =============================================================================
+# SIDEBAR
+# =============================================================================
+st.sidebar.header("Configuration")
+selected_tickers = st.sidebar.multiselect(
+    "Selectionner les actifs CAC 40", CAC40_TICKERS, default=CAC40_TICKERS[:10]
+)
+confidence_level = st.sidebar.slider("Niveau de confiance VaR", 0.90, 0.99, 0.99, 0.01)
+horizon          = st.sidebar.number_input("Horizon (jours)", min_value=1, max_value=30, value=1)
+portfolio_value  = st.sidebar.number_input(
+    "Valeur du portefeuille (euros)", min_value=1_000, value=1_000_000, step=10_000
+)
+strategie_txt = st.sidebar.text_area(
+    "Strategie portefeuille (pour le PDF)",
+    value="Strategie passive egal-ponderee sur l'indice CAC 40. "
+          "Diversification maximale sur les constituants selectionnes."
+)
+
+if not ARCH_OK:
+    st.sidebar.warning("Package arch non installe - GARCH desactive.\npip install arch")
+
+# =============================================================================
+# BACKTESTING FUNCTIONS
+# =============================================================================
+
+def kupiec_pof(r, var_val, alpha=0.01):
+    n   = len(r)
+    exc = int(np.sum(r < var_val))
+    if exc == 0 or exc == n:
+        return exc, exc / n, 0.0, 1.0
+    p  = exc / n
+    LR = -2.0 * np.log(
+        ((1 - alpha)**(n - exc) * alpha**exc) /
+        ((1 - p)**(n - exc) * p**exc)
+    )
+    return exc, p, float(LR), float(chi2.sf(LR, df=1))
+
+
+def kupiec_tuff(r, var_val, alpha=0.01):
+    idx = np.where(r < var_val)[0]
+    if len(idx) == 0:
+        return np.nan, np.nan
+    v     = int(idx[0]) + 1
+    logL0 = np.log(alpha + 1e-300) + (v - 1) * np.log(max(1 - alpha, 1e-300))
+    if v == 1:
+        logL1 = 0.0
+    else:
+        logL1 = np.log(1.0 / v) + (v - 1) * np.log(max(1.0 - 1.0/v, 1e-300))
+    LR = max(-2.0 * (logL0 - logL1), 0.0)
+    return float(LR), float(chi2.sf(LR, df=1))
+
+
+def mrb_basel(exc, T):
+    exc_250 = int(round(exc / T * 250))
+    if exc_250 <= 4:
+        return exc_250, "Verte",  colors.HexColor('#27ae60')
+    elif exc_250 <= 9:
+        return exc_250, "Jaune",  colors.HexColor('#f39c12')
+    else:
+        return exc_250, "Rouge",  colors.HexColor('#e74c3c')
+
+
+def christoffersen_cc(r, var_val, alpha=0.01):
+    exc, p_obs, LR_pof, p_pof = kupiec_pof(r, var_val, alpha)
+    hits = (r < var_val).astype(int)
+    n00 = n01 = n10 = n11 = 0
+    for i in range(1, len(hits)):
+        a, b = hits[i-1], hits[i]
+        if   a == 0 and b == 0: n00 += 1
+        elif a == 0 and b == 1: n01 += 1
+        elif a == 1 and b == 0: n10 += 1
+        else:                    n11 += 1
+    n0 = n00 + n01
+    n1 = n10 + n11
+    if n0 == 0 or n1 == 0:
+        return exc, p_obs, LR_pof, p_pof, np.nan, np.nan, np.nan, np.nan
+    eps = 1e-10
+    pi0 = np.clip(n01 / n0,            eps, 1 - eps)
+    pi1 = np.clip(n11 / n1,            eps, 1 - eps)
+    pi  = np.clip((n01 + n11)/(n0+n1), eps, 1 - eps)
+    logL_ind  = (n00*np.log(1-pi0) + n01*np.log(pi0) +
+                 n10*np.log(1-pi1) + n11*np.log(pi1))
+    logL_null = ((n00+n10)*np.log(1-pi) + (n01+n11)*np.log(pi))
+    LR_ind = max(float(-2.0 * (logL_null - logL_ind)), 0.0)
+    p_ind  = float(chi2.sf(LR_ind, df=1))
+    LR_cc  = LR_pof + LR_ind
+    p_cc   = float(chi2.sf(LR_cc, df=2))
+    return exc, p_obs, LR_pof, p_pof, LR_ind, p_ind, LR_cc, p_cc
+
+
+def run_backtesting(r_arr, VaR_dict, alpha=0.01):
+    T  = len(r_arr)
+    bt = {}
+    for name, vv in VaR_dict.items():
+        if np.isnan(vv):
+            bt[name] = None
+            continue
+        exc, p_obs, LR_pof, p_pof              = kupiec_pof(r_arr, vv, alpha)
+        LR_tuff, p_tuff                         = kupiec_tuff(r_arr, vv, alpha)
+        exc_250, zone, zone_col                 = mrb_basel(exc, T)
+        _, _, _, _, LR_ind, p_ind, LR_cc, p_cc = christoffersen_cc(r_arr, vv, alpha)
+
+        def nn(x):
+            return None if (x is None or (isinstance(x, float) and np.isnan(x))) else x
+
+        bt[name] = dict(
+            exc=exc, p_obs=p_obs,
+            LR_pof=LR_pof, p_pof=p_pof,
+            LR_tuff=nn(LR_tuff), p_tuff=nn(p_tuff),
+            exc_250=exc_250, zone=zone, zone_col=zone_col,
+            LR_ind=nn(LR_ind), p_ind=nn(p_ind),
+            LR_cc=nn(LR_cc),   p_cc=nn(p_cc),
+        )
+    return bt
+
+# =============================================================================
+# VAR 7 METHODS
+# =============================================================================
+
+def compute_all_var(r_series, conf):
+    alpha    = 1 - conf
+    r_arr    = r_series.values.astype(float)
+    mu       = float(np.mean(r_arr))
+    sigma    = float(np.std(r_arr))
+    sk       = float(skew(r_arr))
+    kurt_exc = float(kurtosis(r_arr, fisher=True))
+    z        = float(norm.ppf(conf))
+
+    VaR = {}
+    VaR["Historique"]     = float(np.quantile(r_arr, alpha))
+    VaR["Parametrique"]   = mu - sigma * z
+    VaR["Cornish-Fisher"] = mu - sigma * (
+        z + (z**2 - 1)*sk/6
+          + (z**3 - 3*z)*kurt_exc/24
+          - (2*z**3 - 5*z)*sk**2/36
+    )
+    VaR["RiskMetrics"]    = -sigma * z
+
+    if ARCH_OK:
+        try:
+            gm      = arch_model(r_arr * 100, vol='Garch', p=1, q=1, rescale=True)
+            gres    = gm.fit(disp='off')
+            gfc     = gres.forecast(horizon=1)
+            sigma_g = float(np.sqrt(gfc.variance.values[-1, -1])) / 100
+            VaR["GARCH"]     = -sigma_g * z
+            VaR["TVE-GARCH"] = -sigma_g * (float(norm.pdf(z)) / alpha)
+        except Exception:
+            VaR["GARCH"]     = np.nan
+            VaR["TVE-GARCH"] = np.nan
+    else:
+        VaR["GARCH"]     = np.nan
+        VaR["TVE-GARCH"] = np.nan
+
+    n_tail           = max(1, int(len(r_arr) * alpha))
+    VaR["TVE hist."] = float(np.mean(np.sort(r_arr)[:n_tail]))
+
+    return VaR, mu, sigma, sk, kurt_exc
+
+
+# =============================================================================
+# GRAPHS
+# =============================================================================
+
+def make_graphs(dates, r_arr, VaR_dict, tmpdir):
+    GC = ['#e74c3c','#2ecc71','#3498db','#9b59b6','#f39c12','#1abc9c','#e67e22']
+    graph_files = {}
+
+    for i, (name, vv) in enumerate(VaR_dict.items()):
+        if np.isnan(vv):
+            continue
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(dates, r_arr, color='steelblue', lw=0.6, alpha=0.8, label='Rendements')
+        ax.axhline(vv, color='red', ls='--', lw=2,
+                   label='VaR 99% = {:.5f}'.format(vv))
+        exc_d = [d for d, rv in zip(dates, r_arr) if rv < vv]
+        exc_v = [rv for rv in r_arr if rv < vv]
+        ax.scatter(exc_d, exc_v, color='red', s=10, zorder=5, alpha=0.7,
+                   label='Violations (n={})'.format(len(exc_d)))
+        ax.set_title("VaR 99% - {}".format(name), fontsize=12, fontweight='bold')
+        ax.legend(fontsize=8, loc='upper right')
+        ax.grid(True, alpha=0.3)
+        ax.set_ylabel("Rendement journalier")
+        plt.tight_layout()
+        safe  = name.replace('.', '-').replace(' ', '_').replace('/', '-')
+        fname = os.path.join(tmpdir, "graph_{}.png".format(safe))
+        plt.savefig(fname, dpi=150, bbox_inches='tight')
+        plt.close()
+        graph_files[name] = fname
+
+    # Combined
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(dates, r_arr, color='steelblue', lw=0.6, alpha=0.7, label='Rendements')
+    for i, (name, vv) in enumerate(VaR_dict.items()):
+        if not np.isnan(vv):
+            ax.axhline(vv, ls='--', lw=1.8,
+                       label="{} ({:.4f})".format(name, vv),
+                       color=GC[i % len(GC)])
+    ax.set_title("Comparaison des 7 mesures de risque (VaR 99% et TVE)",
+                 fontsize=12, fontweight='bold')
+    ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=8)
+    ax.grid(True, alpha=0.3)
+    ax.set_ylabel("Rendement journalier")
+    plt.tight_layout()
+    combine_file = os.path.join(tmpdir, "graph_combine.png")
+    plt.savefig(combine_file, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    return graph_files, combine_file
+
+
+# =============================================================================
+# PDF BUILDER (full professor structure)
+# =============================================================================
+
+def build_pdf_full(VaR_dict, bt, mu, sigma, sk, kurt_exc, T, n_actifs,
+                   graph_files, combine_file, conf, strategie,
+                   weight_df, contrib_df) -> BytesIO:
+
+    buf   = BytesIO()
+    alpha = 1 - conf
+    today = datetime.date.today().strftime("%d %B %Y")
+
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            rightMargin=2*cm, leftMargin=2*cm,
+                            topMargin=2*cm,   bottomMargin=2*cm)
+
+    BLUE  = colors.darkblue
+    GREEN = colors.HexColor('#27ae60')
+    RED   = colors.HexColor('#e74c3c')
+    LBLUE = colors.HexColor('#eef3ff')
+
+    BASE_TS = [
+        ('BACKGROUND',    (0,0), (-1,0),  BLUE),
+        ('TEXTCOLOR',     (0,0), (-1,0),  colors.whitesmoke),
+        ('FONTNAME',      (0,0), (-1,0),  'Helvetica-Bold'),
+        ('GRID',          (0,0), (-1,-1), 0.5, colors.grey),
+        ('FONTSIZE',      (0,0), (-1,-1), 9),
+        ('ALIGN',         (1,0), (-1,-1), 'CENTER'),
+        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 7),
+        ('TOPPADDING',    (0,0), (-1,-1), 7),
+        ('ROWBACKGROUNDS',(0,1), (-1,-1), [colors.white, LBLUE]),
+    ]
+
+    def dec_col(d):
+        if d == "Accepte": return GREEN
+        if d == "Rejete":  return RED
+        return colors.HexColor('#bdc3c7')
+
+    def fmt(v, dec=4):
+        return "{:.{}f}".format(v, dec) if v is not None else "N/A"
+
+    def P(text, style):
+        return Paragraph(str(text), style)
+
+    mk = lambda n, **kw: ParagraphStyle(n, **kw)
+
+    s_title = mk('t1', fontSize=26, alignment=1, spaceAfter=18,
+                 textColor=BLUE, fontName='Helvetica-Bold')
+    s_sub   = mk('t2', fontSize=17, alignment=1, spaceAfter=8)
+    s_auth  = mk('t3', fontSize=15, alignment=1, spaceAfter=6)
+    s_date  = mk('t4', fontSize=12, alignment=1, spaceAfter=6)
+    s_dest  = mk('t5', fontSize=13, alignment=1, spaceAfter=6)
+    s_h1    = mk('h1', fontSize=15, textColor=BLUE, fontName='Helvetica-Bold',
+                 spaceAfter=10, spaceBefore=14)
+    s_h2    = mk('h2', fontSize=12, textColor=colors.HexColor('#1a4a8a'),
+                 fontName='Helvetica-Bold', spaceAfter=7, spaceBefore=10)
+    s_norm  = mk('nr', fontSize=10, spaceAfter=5, leading=14)
+    s_note  = mk('nt', fontSize=9,  spaceAfter=5, leading=13,
+                 textColor=colors.HexColor('#555555'), leftIndent=10)
+    s_toc   = mk('tc', fontSize=11, spaceAfter=4, leftIndent=10)
+    s_box   = mk('bx', fontSize=9,  spaceAfter=3, leading=13,
+                 textColor=colors.HexColor('#333333'))
+
+    story = []
+
+    # ── PAGE DE GARDE ─────────────────────────────────────────────────────────
+    # Encadre consignes du prof
+    story.append(Spacer(1, 0.5*cm))
+    story.append(P("CONSIGNES DU PROJET", mk('ch', fontSize=11,
+                    fontName='Helvetica-Bold', textColor=BLUE, spaceAfter=6)))
+
+    consignes_lines = [
+        "Cours : Gestion des Risques - Projet Progiciel",
+        "Groupes de 4 a 5 personnes | Composition a communiquer avant le 11 janvier 2026",
+        "Rendu : 14 fevrier 2026 avant 9h | Soutenances : 14 fevrier 2026 de 10h a 14h (30 min/groupe)",
+        "Objectif : Outil Python calculant et comparant les 7 methodes de VaR",
+        "(historique, parametrique, Cornish-Fisher, RiskMetrics, GARCH, TVE, TVE-GARCH)",
+        "Taches : (1) Performances & strategie | (2) Selection d'actifs | (3) 7 methodes VaR",
+        "         (4) Backtesting | (5) Excel Reporting | (6) PDF Reporting | (7) Manuel",
+    ]
+    consig_data = [[P("  " + line, s_box)] for line in consignes_lines]
+    consig_tbl  = Table(consig_data, colWidths=[17*cm])
+    consig_tbl.setStyle(TableStyle([
+        ('BOX',           (0,0), (-1,-1), 1.2, BLUE),
+        ('BACKGROUND',    (0,0), (-1,-1), colors.HexColor('#f0f4ff')),
+        ('TOPPADDING',    (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING',   (0,0), (-1,-1), 8),
+    ]))
+    story.append(consig_tbl)
+    story.append(Spacer(1, 1.5*cm))
+
+    story += [
+        P("REPORTING VaR 99%", s_title),
+        P("Portefeuille CAC 40 - Egal-pondere", s_sub),
+        Spacer(1, 0.8*cm),
+        P("Essid Sarra", s_auth),
+        P("Date : {}".format(today), s_date),
+        Spacer(1, 3*cm),
+        P("Destinataire : Directeur du Departement Risque", s_dest),
+        PageBreak(),
+    ]
+
+    # ── TABLE DES MATIERES ────────────────────────────────────────────────────
+    story.append(P("Table des matieres", s_h1))
+    for item in [
+        "1. Introduction",
+        "2. Strategie du portefeuille",
+        "3. Performances du portefeuille",
+        "4. Composition du portefeuille",
+        "5. Estimation de la VaR a 99% - 7 methodes",
+        "6. Backtesting avance",
+        "    6.1  Kupiec POF - Test 1",
+        "    6.2  Kupiec TUFF - Test 2",
+        "    6.3  MRB / Basel Traffic Light - Test 3",
+        "    6.4  Christoffersen CC - Test 4",
+        "    6.5  Tableau recapitulatif",
+        "7. Representations graphiques",
+        "8. Conclusion et recommandations",
+    ]:
+        story.append(P(item, s_toc))
+    story.append(PageBreak())
+
+    # ── 1. INTRODUCTION ───────────────────────────────────────────────────────
+    story.append(P("1. Introduction", s_h1))
+    story.append(P(
+        "Ce reporting presente une analyse complete du risque de marche du portefeuille "
+        "CAC 40 en egal-ponderation (1/N), couvrant 5 annees de donnees journalieres. "
+        "Cinq methodes de VaR 99% et deux mesures de risque extreme (TVE / Expected Shortfall) "
+        "sont estimees et soumises a quatre tests de backtesting : "
+        "Kupiec POF (test 1), Kupiec TUFF (test 2), MRB/Basel Traffic Light (test 3) "
+        "et Christoffersen CC (test 4). Le seuil de rejet est fixe a 5%.",
+        s_norm))
+    story.append(Spacer(1, 0.3*cm))
+
+    # ── 2. STRATEGIE ──────────────────────────────────────────────────────────
+    story.append(P("2. Strategie du portefeuille", s_h1))
+    story.append(P(strategie or "Strategie passive egal-ponderee sur l'indice CAC 40.", s_norm))
+    story.append(Spacer(1, 0.3*cm))
+
+    # ── 3. PERFORMANCES ───────────────────────────────────────────────────────
+    story.append(P("3. Performances du portefeuille", s_h1))
+    sharpe = (mu * 252) / (sigma * np.sqrt(252)) if sigma > 0 else float('nan')
+    t_perf = Table([
+        ["Indicateur",                 "Valeur"],
+        ["Rendement moyen journalier",  fmt(mu, 6)],
+        ["Volatilite journaliere",      fmt(sigma, 6)],
+        ["Volatilite annualisee",       fmt(sigma * np.sqrt(252), 6)],
+        ["Rendement annualise",         fmt(mu * 252, 6)],
+        ["Skewness",                    fmt(sk, 4)],
+        ["Kurtosis (exces)",            fmt(kurt_exc, 4)],
+        ["Ratio de Sharpe (Rf=0)",      fmt(sharpe, 4)],
+        ["Nombre d'actifs",             str(n_actifs)],
+        ["Nombre d'observations (T)",   str(T)],
+    ], colWidths=[9*cm, 7*cm])
+    t_perf.setStyle(TableStyle(BASE_TS + [('FONTSIZE',(0,0),(-1,-1),10)]))
+    story += [t_perf, Spacer(1, 0.5*cm)]
+
+    # ── 4. COMPOSITION ────────────────────────────────────────────────────────
+    story.append(P("4. Composition du portefeuille", s_h1))
+    port_rows = [["Actif", "Poids (%)", "Rdt moy. jour. (%)", "Contribution (%)"]]
+    for _, row in weight_df.iterrows():
+        cv = contrib_df.loc[contrib_df['Actif'] == row['Actif'], 'Contribution (%)']
+        c  = fmt(cv.values[0], 4) if len(cv) else "N/A"
+        rdt = fmt(row.get('Rdt moy (%)', 0), 4)
+        port_rows.append([row['Actif'], "{:.2f}".format(row['Poids (%)']), rdt, c])
+    t_comp = Table(port_rows, colWidths=[4*cm, 3*cm, 5*cm, 5.5*cm])
+    t_comp.setStyle(TableStyle(BASE_TS))
+    story += [t_comp, PageBreak()]
+
+    # ── 5. VAR 7 METHODES ─────────────────────────────────────────────────────
+    story.append(P("5. Estimation de la VaR a 99% - 7 methodes", s_h1))
+    descriptions = {
+        "Historique":     "Methode non-parametrique : quantile empirique a 1% des rendements tries.",
+        "Parametrique":   "VaR sous hypothese normale via moyenne et ecart-type x z-score (2.326).",
+        "Cornish-Fisher": "Correction de la VaR normale par le skewness et l'exces de kurtosis.",
+        "RiskMetrics":    "Modele EWMA (lambda=0.94) - volatilite exponentiellement ponderee.",
+        "GARCH":          "VaR conditionnelle GARCH(1,1) capturant le clustering de volatilite.",
+        "TVE-GARCH":      "Expected Shortfall conditionnel base sur la volatilite GARCH prevue.",
+        "TVE hist.":      "Expected Shortfall historique : moyenne des pires 1% des pertes observees.",
+    }
+    var_rows = [["Methode", "VaR 99%", "Description"]]
+    for name, vv in VaR_dict.items():
+        var_rows.append([name,
+                         fmt(vv, 5) if not np.isnan(vv) else "N/A",
+                         descriptions.get(name, "")])
+    t_var = Table(var_rows, colWidths=[3.5*cm, 2.5*cm, 11.5*cm])
+    t_var.setStyle(TableStyle(BASE_TS))
+    story += [t_var, PageBreak()]
+
+    # ── 6. BACKTESTING ────────────────────────────────────────────────────────
+    story.append(P("6. Backtesting avance", s_h1))
+    story.append(P(
+        "Les quatre tests ci-dessous evaluent la qualite predictive de chaque modele de VaR. "
+        "Un modele est declare valide (Accepte, fond vert) si sa p-value depasse 5%.",
+        s_norm))
+    story.append(Spacer(1, 0.3*cm))
+
+    # 6.1 POF
+    story.append(P("6.1  Kupiec POF - Test 1 : Proportion Of Failures", s_h2))
+    story.append(P(
+        "H0 : la proportion de violations observees est egale au niveau alpha = 1%. "
+        "Statistique LR_POF ~ chi2(1). Accepte si p-value > 0.05.", s_norm))
+    pof_h = [["Methode", "Violations", "% observe", "LR POF", "p-value", "Decision"]]
+    pof_r, pof_s = [], []
+    for name, res in bt.items():
+        ri = len(pof_r) + 1
+        if res is None:
+            pof_r.append([name,"N/A","N/A","N/A","N/A","N/A"]); continue
+        dec = "Accepte" if res['p_pof'] > 0.05 else "Rejete"
+        pof_s += [('BACKGROUND',(5,ri),(5,ri),dec_col(dec)),
+                  ('TEXTCOLOR',  (5,ri),(5,ri),colors.white)]
+        pof_r.append([name, res['exc'],
+                      "{:.2f}%".format(res['p_obs']*100),
+                      fmt(res['LR_pof'],3), fmt(res['p_pof'],4), dec])
+    t_pof = Table(pof_h + pof_r,
+                  colWidths=[3.8*cm,2.5*cm,2.5*cm,2.5*cm,2.5*cm,3.7*cm])
+    t_pof.setStyle(TableStyle(BASE_TS + pof_s))
+    story += [t_pof, Spacer(1, 0.6*cm)]
+
+    # 6.2 TUFF
+    story.append(P("6.2  Kupiec TUFF - Test 2 : Time Until First Failure", s_h2))
+    story.append(P(
+        "H0 : le delai jusqu'a la 1ere violation suit une loi Geometrique(alpha=1%). "
+        "LR_TUFF ~ chi2(1). Accepte si p-value > 0.05.", s_norm))
+    story.append(P(
+        "Note : le TUFF est structurellement peu puissant car il repose sur une unique "
+        "observation (la premiere violation). Des resultats majoritairement verts sont "
+        "normaux pour ce test. Il doit etre lu en complement du POF et du CC.", s_note))
+    tuff_h = [["Methode", "LR TUFF", "p-value", "Decision"]]
+    tuff_r, tuff_s = [], []
+    for name, res in bt.items():
+        ri = len(tuff_r) + 1
+        if res is None or res['LR_tuff'] is None:
+            tuff_r.append([name,"N/A","N/A","N/A"]); continue
+        dec = "Accepte" if res['p_tuff'] > 0.05 else "Rejete"
+        tuff_s += [('BACKGROUND',(3,ri),(3,ri),dec_col(dec)),
+                   ('TEXTCOLOR',  (3,ri),(3,ri),colors.white)]
+        tuff_r.append([name, fmt(res['LR_tuff'],3), fmt(res['p_tuff'],4), dec])
+    t_tuff = Table(tuff_h + tuff_r, colWidths=[5*cm,4*cm,4*cm,4.5*cm])
+    t_tuff.setStyle(TableStyle(BASE_TS + tuff_s))
+    story += [t_tuff, Spacer(1, 0.6*cm)]
+
+    # 6.3 MRB Basel
+    story.append(P("6.3  MRB / Basel Traffic Light - Test 3", s_h2))
+    story.append(P(
+        "Critere reglementaire du Comite de Bale (Amendement 1996). "
+        "Zone Verte (0-4 violations/250j) : modele sain. "
+        "Zone Jaune (5-9) : surveillance renforcee. "
+        "Zone Rouge (>=10) : modele rejete.", s_norm))
+    mrb_h = [["Methode", "Violations (obs.)", "Violations / 250j", "Zone Bale"]]
+    mrb_r, mrb_s = [], []
+    for name, res in bt.items():
+        ri = len(mrb_r) + 1
+        if res is None:
+            mrb_r.append([name,"N/A","N/A","N/A"]); continue
+        mrb_s += [('BACKGROUND',(3,ri),(3,ri),res['zone_col']),
+                  ('TEXTCOLOR',  (3,ri),(3,ri),colors.white)]
+        mrb_r.append([name, res['exc'], res['exc_250'], res['zone']])
+    t_mrb = Table(mrb_h + mrb_r, colWidths=[4*cm,3.8*cm,3.8*cm,5.9*cm])
+    t_mrb.setStyle(TableStyle(BASE_TS + mrb_s))
+    story += [t_mrb, Spacer(1, 0.6*cm)]
+
+    # 6.4 Christoffersen CC
+    story.append(P("6.4  Christoffersen CC - Test 4 : Conditional Coverage", s_h2))
+    story.append(P(
+        "Test le plus rigoureux : combine couverture (POF) et independance des violations. "
+        "LR_CC = LR_POF + LR_Ind ~ chi2(2). Accepte si p-value > 0.05.", s_norm))
+    cc_h = [["Methode","LR POF","p-POF","LR Ind.","p-Ind.","LR CC","p-CC","Decision CC"]]
+    cc_r, cc_s = [], []
+    for name, res in bt.items():
+        ri = len(cc_r) + 1
+        if res is None or res['LR_cc'] is None:
+            cc_r.append([name,"N/A","N/A","N/A","N/A","N/A","N/A","N/A"]); continue
+        dec = "Accepte" if res['p_cc'] > 0.05 else "Rejete"
+        cc_s += [('BACKGROUND',(7,ri),(7,ri),dec_col(dec)),
+                 ('TEXTCOLOR',  (7,ri),(7,ri),colors.white)]
+        cc_r.append([name,
+                     fmt(res['LR_pof'],3), fmt(res['p_pof'],4),
+                     fmt(res['LR_ind'],3), fmt(res['p_ind'],4),
+                     fmt(res['LR_cc'], 3), fmt(res['p_cc'], 4), dec])
+    t_cc = Table(cc_h + cc_r,
+                 colWidths=[3.5*cm,2*cm,1.8*cm,2*cm,1.8*cm,2*cm,1.8*cm,2.6*cm])
+    t_cc.setStyle(TableStyle(BASE_TS + [('FONTSIZE',(0,0),(-1,-1),8)] + cc_s))
+    story += [t_cc, Spacer(1, 0.6*cm)]
+
+    # 6.5 Recapitulatif
+    story.append(P("6.5  Tableau recapitulatif - Synthese des 4 tests", s_h2))
+    recap_h = [["Methode","VaR 99%","POF","TUFF","Bale","CC"]]
+    recap_r, recap_s = [], []
+    for name, res in bt.items():
+        ri  = len(recap_r) + 1
+        vv  = VaR_dict[name]
+        if res is None:
+            recap_r.append([name,"N/A","N/A","N/A","N/A","N/A"]); continue
+        d_pof  = "Accepte" if res['p_pof']  > 0.05 else "Rejete"
+        d_tuff = ("N/A" if res['p_tuff'] is None
+                  else ("Accepte" if res['p_tuff'] > 0.05 else "Rejete"))
+        d_mrb  = res['zone']
+        d_cc   = ("N/A" if res['p_cc'] is None
+                  else ("Accepte" if res['p_cc'] > 0.05 else "Rejete"))
+        for ci, d in [(2,d_pof),(3,d_tuff),(5,d_cc)]:
+            if d in ("Accepte","Rejete"):
+                recap_s += [('BACKGROUND',(ci,ri),(ci,ri),dec_col(d)),
+                             ('TEXTCOLOR',  (ci,ri),(ci,ri),colors.white)]
+        recap_s += [('BACKGROUND',(4,ri),(4,ri),res['zone_col']),
+                    ('TEXTCOLOR',  (4,ri),(4,ri),colors.white)]
+        recap_r.append([name, fmt(vv,5), d_pof, d_tuff, d_mrb, d_cc])
+    t_recap = Table(recap_h + recap_r,
+                    colWidths=[3.8*cm,2.5*cm,2.7*cm,2.7*cm,2.7*cm,2.7*cm])
+    t_recap.setStyle(TableStyle(BASE_TS + recap_s))
+    story += [t_recap, PageBreak()]
+
+    # ── 7. GRAPHIQUES ─────────────────────────────────────────────────────────
+    story.append(P("7. Representations graphiques", s_h1))
+    graph_expl = {
+        "Historique":     "Rendements journaliers et VaR Historique. Methode purement empirique.",
+        "Parametrique":   "VaR Parametrique sous hypothese normale. Seuil theorique a 99%.",
+        "Cornish-Fisher": "VaR ajustee pour l'asymetrie et la kurtosis.",
+        "RiskMetrics":    "VaR RiskMetrics (EWMA). Reagit rapidement aux hausses de volatilite.",
+        "GARCH":          "VaR GARCH(1,1). Capture le clustering de volatilite.",
+        "TVE-GARCH":      "Expected Shortfall conditionnel base sur la volatilite GARCH.",
+        "TVE hist.":      "Expected Shortfall historique : moyenne des pires rendements observes.",
+        "Combine":        "Superposition des 7 methodes - comparaison visuelle.",
+    }
+    for name, fname in graph_files.items():
+        if not os.path.exists(fname):
+            continue
+        story.append(P("<b>{}</b>".format(name), s_h2))
+        story.append(Image(fname, width=16*cm, height=7*cm))
+        story.append(P("<b>Explication :</b> {}".format(graph_expl.get(name,"")), s_norm))
+        story.append(Spacer(1, 0.8*cm))
+    if os.path.exists(combine_file):
+        story.append(P("<b>Comparaison des 7 mesures de risque (VaR 99% et TVE)</b>", s_h2))
+        story.append(Image(combine_file, width=16*cm, height=7*cm))
+        story.append(P("<b>Explication :</b> {}".format(graph_expl['Combine']), s_norm))
+    story.append(PageBreak())
+
+    # ── 8. CONCLUSION ─────────────────────────────────────────────────────────
+    story.append(P("8. Conclusion et recommandations", s_h1))
+    var_only = ["Historique","Parametrique","Cornish-Fisher","RiskMetrics","GARCH"]
+    accepted_all = [
+        n for n in var_only
+        if n in bt and bt[n] is not None
+        and bt[n]['p_pof'] > 0.05
+        and (bt[n]['p_cc'] is None or bt[n]['p_cc'] > 0.05)
+        and bt[n]['zone'] == "Verte"
+    ]
+    acc_str = (", ".join(accepted_all) if accepted_all
+               else "aucun modele de VaR n'est valide simultanement par POF, CC et Bale")
+
+    for pt in [
+        "Modeles de VaR valides selon les tests POF, CC et Bale : <b>{}</b>.".format(acc_str),
+        "<b>Kupiec POF</b> : teste si le taux de violations global respecte alpha = 1%.",
+        "<b>Kupiec TUFF</b> : complementaire au POF. Faible puissance - resultats verts normaux.",
+        "<b>MRB Bale</b> : classification reglementaire sur 250 jours.",
+        "<b>Christoffersen CC</b> : test le plus complet - combine couverture et independance.",
+        "Recommandation : privilegier la <b>VaR Cornish-Fisher</b> pour le seuil reglementaire "
+        "et la <b>TVE-GARCH</b> pour l'Expected Shortfall conditionnel.",
+    ]:
+        story.append(P("- {}".format(pt), s_norm))
+
+    story.append(Spacer(1, 0.8*cm))
+    story.append(P(
+        "Ce rapport a ete produit conformement aux standards du Departement Risque, "
+        "en accord avec les recommandations du Comite de Bale (BCBS).",
+        s_norm))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+# =============================================================================
+# EXCEL BUILDER
+# =============================================================================
+
+def build_excel_full(m_simple, VaR_dict, bt, weight_df, returns,
+                     r_portfolio, conf, horizon, pv) -> BytesIO:
+    wb = Workbook()
+    hf  = Font(bold=True, color="FFFFFF", name="Arial", size=11)
+    hfi = PatternFill("solid", start_color="1A3A5C", end_color="1A3A5C")
+    afi = PatternFill("solid", start_color="EEF2F7", end_color="EEF2F7")
+    ctr = Alignment(horizontal="center", vertical="center")
+    thn = Side(style="thin", color="AAAAAA")
+    brd = Border(left=thn, right=thn, top=thn, bottom=thn)
+    tf  = Font(bold=True, name="Arial", size=14, color="1A3A5C")
+    bf  = Font(bold=True, name="Arial", color="0000FF")
+    gf  = Font(bold=True, name="Arial", color="27AE60")
+    rf  = Font(bold=True, name="Arial", color="E74C3C")
+
+    def sh(ws, row, cols):
+        for c in range(1, cols+1):
+            cell = ws.cell(row=row, column=c)
+            cell.font=hf; cell.fill=hfi; cell.alignment=ctr; cell.border=brd
+
+    def sd(ws, row, cols, alt=False):
+        for c in range(1, cols+1):
+            cell = ws.cell(row=row, column=c)
+            cell.alignment=ctr; cell.border=brd
+            if alt: cell.fill=afi
+
+    # Feuille 1 : Resume
+    ws1 = wb.active; ws1.title = "Resume"
+    for col, w in zip('ABC', [32,22,22]): ws1.column_dimensions[col].width = w
+    ws1['A1'] = "Reporting VaR {}% - CAC 40 - Essid Sarra".format(int(conf*100))
+    ws1['A1'].font = tf
+    ws1['A2'] = "Genere le {} | Valeur : {:,.0f} euros".format(
+        datetime.date.today().strftime('%d/%m/%Y'), pv)
+    ws1['A2'].font = Font(italic=True, name="Arial", color="555555")
+    ws1.merge_cells('A1:C1'); ws1.merge_cells('A2:C2')
+    for col, h in enumerate(["Indicateur","Valeur parametrique","Valeur historique"], 1):
+        ws1.cell(row=4, column=col, value=h)
+    sh(ws1, 4, 3)
+    rows_d = [
+        ("VaR {}% ({} j) %".format(int(conf*100), horizon),
+         round(m_simple['var_param_pct'],4), round(m_simple['var_hist_pct'],4)),
+        ("VaR {}% ({} j) euro".format(int(conf*100), horizon),
+         round(m_simple['var_param_eur'],2), round(m_simple['var_hist_eur'],2)),
+        ("CVaR {}% %".format(int(conf*100)),
+         round(m_simple['cvar_param_pct'],4), round(m_simple['cvar_hist_pct'],4)),
+        ("CVaR {}% euro".format(int(conf*100)),
+         round(m_simple['cvar_param_eur'],2), round(m_simple['cvar_hist_eur'],2)),
+        ("Volatilite annualisee (%)", round(m_simple['annual_vol'],4), "—"),
+        ("Rendement annualise (%)",   round(m_simple['annual_ret'],4), "—"),
+        ("Ratio de Sharpe",           round(m_simple['sharpe'],4),     "—"),
+    ]
+    for i, (a,b,c) in enumerate(rows_d, start=5):
+        ws1.cell(row=i,column=1,value=a)
+        ws1.cell(row=i,column=2,value=b); ws1.cell(row=i,column=2).font=bf
+        ws1.cell(row=i,column=3,value=c); ws1.cell(row=i,column=3).font=bf
+        sd(ws1, i, 3, alt=(i%2==0))
+
+    # Feuille 2 : VaR 7 methodes
+    ws2 = wb.create_sheet("VaR 7 methodes")
+    ws2.column_dimensions['A'].width=18; ws2.column_dimensions['B'].width=16
+    ws2['A1']="VaR 99% - 7 methodes"; ws2['A1'].font=tf; ws2.merge_cells('A1:B1')
+    for col,h in enumerate(["Methode","VaR 99%"],1): ws2.cell(row=3,column=col,value=h)
+    sh(ws2, 3, 2)
+    for i,(name,vv) in enumerate(VaR_dict.items(), start=4):
+        ws2.cell(row=i,column=1,value=name)
+        ws2.cell(row=i,column=2,value=round(vv,6) if not np.isnan(vv) else "N/A")
+        ws2.cell(row=i,column=2).font=bf; sd(ws2,i,2,alt=(i%2==0))
+
+    # Feuille 3 : Backtesting
+    ws3 = wb.create_sheet("Backtesting")
+    for col,w in zip('ABCDEFGHIJ',[18,10,10,10,10,12,10,10,10,14]):
+        ws3.column_dimensions[col].width=w
+    ws3['A1']="Synthese Backtesting (4 tests)"; ws3['A1'].font=tf
+    ws3.merge_cells('A1:J1')
+    heads=["Methode","VaR 99%","Violations","% obs.","p-POF","p-TUFF",
+           "Zone Bale","p-Ind.","p-CC","Decision CC"]
+    for col,h in enumerate(heads,1): ws3.cell(row=3,column=col,value=h)
+    sh(ws3, 3, len(heads))
+    for i,(name,res) in enumerate(bt.items(), start=4):
+        vv=VaR_dict[name]
+        ws3.cell(row=i,column=1,value=name)
+        ws3.cell(row=i,column=2,value=round(vv,6) if not np.isnan(vv) else "N/A")
+        if res is None:
+            for c in range(3,len(heads)+1): ws3.cell(row=i,column=c,value="N/A")
+        else:
+            ws3.cell(row=i,column=3,value=res['exc'])
+            ws3.cell(row=i,column=4,value=round(res['p_obs']*100,2))
+            ws3.cell(row=i,column=5,value=round(res['p_pof'],4))
+            ws3.cell(row=i,column=6,value=round(res['p_tuff'],4) if res['p_tuff'] else "N/A")
+            ws3.cell(row=i,column=7,value=res['zone'])
+            ws3.cell(row=i,column=8,value=round(res['p_ind'],4) if res['p_ind'] else "N/A")
+            ws3.cell(row=i,column=9,value=round(res['p_cc'],4) if res['p_cc'] else "N/A")
+            dec=("N/A" if res['p_cc'] is None
+                 else ("Accepte" if res['p_cc']>0.05 else "Rejete"))
+            cell_d=ws3.cell(row=i,column=10,value=dec)
+            cell_d.font = gf if dec=="Accepte" else (rf if dec=="Rejete" else Font(name="Arial"))
+        sd(ws3, i, len(heads), alt=(i%2==0))
+
+    # Feuille 4 : Composition
+    ws4 = wb.create_sheet("Composition")
+    for col,w in zip('ABCD',[14,14,22,22]): ws4.column_dimensions[col].width=w
+    ws4['A1']="Composition du portefeuille"; ws4['A1'].font=tf; ws4.merge_cells('A1:D1')
+    for col,h in enumerate(["Actif","Poids (%)","Rdt moy. jour (%)","Rdt annualise (%)"],1):
+        ws4.cell(row=3,column=col,value=h)
+    sh(ws4, 3, 4)
+    for i,ticker in enumerate(returns.columns, start=4):
+        md=returns[ticker].mean()*100
+        ws4.cell(row=i,column=1,value=ticker)
+        ws4.cell(row=i,column=2,value=round(100/len(returns.columns),4))
+        ws4.cell(row=i,column=3,value=round(md,4))
+        ws4.cell(row=i,column=4,value=round(md*252,4))
+        sd(ws4,i,4,alt=(i%2==0))
+
+    # Feuille 5 : Rendements ptf
+    ws5 = wb.create_sheet("Rendements ptf")
+    ws5.column_dimensions['A'].width=16; ws5.column_dimensions['B'].width=22
+    ws5['A1']="Date"; ws5['B1']="Rendement ptf (%)"; sh(ws5,1,2)
+    for i,(date,val) in enumerate(r_portfolio.items(), start=2):
+        ws5.cell(row=i,column=1,value=str(date)[:10])
+        ws5.cell(row=i,column=2,value=round(val*100,6)); sd(ws5,i,2,alt=(i%2==0))
+
+    # Feuille 6 : Rendements actifs
+    ws6 = wb.create_sheet("Rendements actifs")
+    ws6.column_dimensions['A'].width=16
+    for ci,ticker in enumerate(returns.columns,start=2):
+        ws6.column_dimensions[get_column_letter(ci)].width=14
+    ws6.cell(row=1,column=1,value="Date")
+    for ci,ticker in enumerate(returns.columns,start=2):
+        ws6.cell(row=1,column=ci,value=ticker)
+    sh(ws6, 1, len(returns.columns)+1)
+    for ri,(date,row_data) in enumerate(returns.iterrows(), start=2):
+        ws6.cell(row=ri,column=1,value=str(date)[:10])
+        for ci,val in enumerate(row_data,start=2):
+            ws6.cell(row=ri,column=ci,value=round(val*100,6))
+        sd(ws6,ri,len(returns.columns)+1,alt=(ri%2==0))
+
+    buf=BytesIO(); wb.save(buf); buf.seek(0)
+    return buf
+
+
+# =============================================================================
+# SIMPLE VAR (for KPI display)
+# =============================================================================
+
+def compute_simple_var(r_series, conf, horizon, pv):
+    alpha     = 1 - conf
+    daily_vol = r_series.std()
+    daily_mu  = r_series.mean()
+    z         = norm.ppf(conf)
+    vp        = -(daily_mu - z * daily_vol) * np.sqrt(horizon)
+    cp        = daily_vol * norm.pdf(z) / alpha * np.sqrt(horizon)
+    sr        = np.sort(r_series.values)
+    idx       = int(alpha * len(sr))
+    vh        = -sr[idx] * np.sqrt(horizon)
+    ch        = -sr[:idx].mean() * np.sqrt(horizon)
+    return {
+        "var_param_pct":  vp * 100, "cvar_param_pct": cp * 100,
+        "var_hist_pct":   vh * 100, "cvar_hist_pct":  ch * 100,
+        "var_param_eur":  vp * pv,  "cvar_param_eur": cp * pv,
+        "var_hist_eur":   vh * pv,  "cvar_hist_eur":  ch * pv,
+        "daily_vol":      daily_vol * 100,
+        "annual_vol":     daily_vol * np.sqrt(252) * 100,
+        "annual_ret":     daily_mu  * 252 * 100,
+        "sharpe":        (daily_mu * 252) / (daily_vol * np.sqrt(252))
+                          if daily_vol > 0 else float('nan'),
+    }
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+if not selected_tickers:
+    st.warning("Selectionne au moins un actif dans la sidebar.")
+    st.stop()
+
+if st.button("Lancer l'analyse complete", type="primary"):
+    with st.spinner("Telechargement et calculs en cours..."):
+
+        # Donnees
+        raw  = yf.download(selected_tickers, period="5y",
+                           auto_adjust=True, progress=False)
+        data = raw['Close'] if isinstance(raw.columns, pd.MultiIndex) else raw
+        data = data.dropna(axis=1, thresh=int(len(data) * 0.8))
+        if data.shape[1] == 0:
+            st.error("Aucune donnee disponible."); st.stop()
+
+        returns = data.pct_change().dropna()
+        n       = len(returns.columns)
+        weights = np.ones(n) / n
+        r       = returns.dot(weights)
+        r_arr   = r.values.astype(float)
+        dates   = r.index
+        T       = len(r_arr)
+        alpha   = 1 - confidence_level
+
+        # VaR 7 methodes
+        VaR_dict, mu, sigma, sk, kurt_exc = compute_all_var(r, confidence_level)
+
+        # Backtesting
+        bt = run_backtesting(r_arr, VaR_dict, alpha)
+
+        # Metriques simples
+        m = compute_simple_var(r, confidence_level, horizon, portfolio_value)
+
+    # KPIs
+    st.success("Analyse terminee")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("VaR param.",    f"{m['var_param_pct']:.2f}%",
+              f"-{m['var_param_eur']:,.0f} euros")
+    k2.metric("VaR hist.",     f"{m['var_hist_pct']:.2f}%",
+              f"-{m['var_hist_eur']:,.0f} euros")
+    k3.metric("CVaR param.",   f"{m['cvar_param_pct']:.2f}%",
+              f"-{m['cvar_param_eur']:,.0f} euros")
+    k4.metric("Vol. annuelle", f"{m['annual_vol']:.2f}%",
+              f"Sharpe : {m['sharpe']:.2f}")
+
+    st.divider()
+
+    # VaR 7 methodes
+    st.subheader("VaR 99% - 7 methodes")
+    var_df = pd.DataFrame({
+        "Methode": list(VaR_dict.keys()),
+        "VaR 99%": [round(v, 5) if not np.isnan(v) else None
+                    for v in VaR_dict.values()]
+    })
+    st.dataframe(var_df, use_container_width=True)
+
+    # Backtesting
+    st.subheader("Backtesting - Synthese des 4 tests")
+    bt_rows = []
+    for name, res in bt.items():
+        if res is None:
+            bt_rows.append({"Methode": name, "Violations":"N/A",
+                             "p-POF":"N/A","p-TUFF":"N/A",
+                             "Zone Bale":"N/A","p-CC":"N/A","Decision CC":"N/A"})
+        else:
+            d_cc = ("N/A" if res['p_cc'] is None
+                    else ("Accepte" if res['p_cc'] > 0.05 else "Rejete"))
+            bt_rows.append({
+                "Methode":    name,
+                "Violations": res['exc'],
+                "p-POF":      round(res['p_pof'], 4),
+                "p-TUFF":     round(res['p_tuff'],4) if res['p_tuff'] is not None else "N/A",
+                "Zone Bale":  res['zone'],
+                "p-CC":       round(res['p_cc'],  4) if res['p_cc']   is not None else "N/A",
+                "Decision CC": d_cc,
+            })
+    st.dataframe(pd.DataFrame(bt_rows), use_container_width=True)
+
+    st.divider()
+
+    # Pie Charts
+    import plotly.express as px
+    st.subheader("Repartition du portefeuille")
+    col1, col2 = st.columns(2)
+    weight_df  = pd.DataFrame({"Actif": returns.columns, "Poids (%)": weights * 100})
+    contrib_df = pd.DataFrame({
+        "Actif": returns.columns,
+        "Contribution (%)": (weights * returns.mean()) * 100
+    })
+    weight_df['Rdt moy (%)'] = [returns[t].mean()*100 for t in returns.columns]
+    contrib_pos = contrib_df[contrib_df["Contribution (%)"] > 0].copy()
+
+    fig1 = px.pie(weight_df, names="Actif", values="Poids (%)",
+                  title="Repartition des poids",
+                  color_discrete_sequence=px.colors.qualitative.Set3)
+    col1.plotly_chart(fig1, use_container_width=True)
+    if not contrib_pos.empty:
+        fig2 = px.pie(contrib_pos, names="Actif", values="Contribution (%)",
+                      title="Contribution au rendement (positifs)",
+                      color_discrete_sequence=px.colors.qualitative.Pastel)
+        col2.plotly_chart(fig2, use_container_width=True)
+
+    # Distribution
+    st.subheader("Distribution des rendements")
+    fig3 = px.histogram(r * 100, nbins=80, labels={"value":"Rendement (%)"},
+                        title="Distribution des rendements journaliers",
+                        color_discrete_sequence=["#2c7be5"])
+    for name, vv in VaR_dict.items():
+        if not np.isnan(vv):
+            fig3.add_vline(x=vv*100, line_dash="dash",
+                           annotation_text=name, annotation_position="top left")
+    st.plotly_chart(fig3, use_container_width=True)
+
+    # Performance cumulee
+    st.subheader("Performance cumulee")
+    cumulative = (1 + r).cumprod() - 1
+    fig4 = px.line(cumulative * 100,
+                   labels={"value":"Performance (%)","index":"Date"},
+                   title="Performance cumulee (base 0)")
+    fig4.update_traces(line_color="#1a3a5c")
+    st.plotly_chart(fig4, use_container_width=True)
+
+    # Correlation
+    if n > 1:
+        st.subheader("Matrice de correlation")
+        corr = returns.corr()
+        fig5 = px.imshow(corr, color_continuous_scale="RdBu_r",
+                         zmin=-1, zmax=1, aspect="auto",
+                         title="Correlation des rendements journaliers")
+        st.plotly_chart(fig5, use_container_width=True)
+
+    st.divider()
+
+    # Generation fichiers
+    with st.spinner("Generation du PDF et de l'Excel..."):
+        tmpdir = tempfile.mkdtemp()
+        graph_files, combine_file = make_graphs(dates, r_arr, VaR_dict, tmpdir)
+
+        pdf_buf = build_pdf_full(
+            VaR_dict, bt, mu, sigma, sk, kurt_exc, T,
+            n_actifs=n,
+            graph_files=graph_files,
+            combine_file=combine_file,
+            conf=confidence_level,
+            strategie=strategie_txt,
+            weight_df=weight_df,
+            contrib_df=contrib_df,
+        )
+        xl_buf = build_excel_full(
+            m, VaR_dict, bt, weight_df, returns, r,
+            confidence_level, horizon, portfolio_value
+        )
+
+    colA, colB = st.columns(2)
+    colA.download_button(
+        "Telecharger le PDF",
+        pdf_buf,
+        f"Reporting_VaR_CAC40_{datetime.date.today()}.pdf",
+        "application/pdf"
+    )
+    colB.download_button(
+        "Telecharger l'Excel",
+        xl_buf,
+        f"Reporting_VaR_CAC40_{datetime.date.today()}.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+st.info("Configure tes parametres dans la sidebar puis clique sur le bouton orange.")
+</code></pre>
+        </div>
+
+        <!-- Résultats -->
+        <div class="bg-zinc-900 rounded-3xl p-10">
+            <h2 class="text-3xl font-semibold mb-6">Résultats obtenus</h2>
+            <p class="text-lg text-gray-300">
+                Ici tu mets ce que le programme affiche, ou tu peux même ajouter des captures d’écran plus tard.
+            </p>
+        </div>
+
+        <div class="text-center mt-20 text-gray-500 text-sm">
+            Site hébergé gratuitement avec ❤️ GitHub Pages • Essid
+        </div>
+    </div>
 </body>
 </html>
