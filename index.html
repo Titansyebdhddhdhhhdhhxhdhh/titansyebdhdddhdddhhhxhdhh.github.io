@@ -3,32 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon Projet Python - Essid</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: system-ui, sans-serif; }
-        pre { font-family: 'Courier New', monospace; background: #111; }
-    </style>
+    <title>Mon Projet Python</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
 </head>
-<body class="bg-gradient-to-br from-zinc-950 to-black text-white min-h-screen py-16">
+<body style="background:#111; color:white; padding:40px; font-family:sans-serif;">
 
-    <div class="max-w-4xl mx-auto px-6">
-        
-        <h1 class="text-6xl font-bold text-center mb-3 text-blue-400">NOM DE TON PROJET</h1>
-        <p class="text-center text-gray-400 text-2xl mb-12">Projet Python présenté à ma professeure</p>
+    <h1>Mon Projet Python</h1>
+    <p>Présenté à ma professeure</p>
 
-        <!-- Description -->
-        <div class="bg-zinc-900 rounded-3xl p-10 mb-12">
-            <h2 class="text-3xl font-semibold mb-6">Description du projet</h2>
-            <p class="text-lg text-gray-300 leading-relaxed">
-                Ici tu mets 2-3 phrases : ce que fait ton programme, pourquoi tu l’as fait, ce que tu as appris…
-            </p>
-        </div>
-
-        <!-- Code Python -->
-        <div class="bg-zinc-900 rounded-3xl p-10 mb-12">
-            <h2 class="text-3xl font-semibold mb-6">Code source Python</h2>
-            <pre class="p-8 rounded-2xl text-sm overflow-auto text-green-400"><code># Colle ici TOUT ton code Python
+    <h2>Le programme s'exécute ici :</h2>
+    
+    <py-script>
+# ====================== MON CODE PYTHON ICI (NE CHANGE RIEN) ======================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1027,20 +1014,9 @@ if st.button("Lancer l'analyse complete", type="primary"):
     )
 
 st.info("Configure tes parametres dans la sidebar puis clique sur le bouton orange.")
-</code></pre>
-        </div>
 
-        <!-- Résultats -->
-        <div class="bg-zinc-900 rounded-3xl p-10">
-            <h2 class="text-3xl font-semibold mb-6">Résultats obtenus</h2>
-            <p class="text-lg text-gray-300">
-                Ici tu mets ce que le programme affiche, ou tu peux même ajouter des captures d’écran plus tard.
-            </p>
-        </div>
+# =================================================================================
+    </py-script>
 
-        <div class="text-center mt-20 text-gray-500 text-sm">
-            Site hébergé gratuitement avec ❤️ GitHub Pages • Essid
-        </div>
-    </div>
 </body>
 </html>
